@@ -2,6 +2,25 @@ from tkinter import *
 from tkinter import ttk, messagebox
 from basicsql import *
 import json
+from datetime import datetime
+
+# Import สำหรับ receipt printing
+try:
+    from receipt_printer import ReceiptPrinter
+    RECEIPT_AVAILABLE = True
+    print("✅ Receipt printer module loaded")
+except ImportError as e:
+    RECEIPT_AVAILABLE = False
+    print(f"❌ Receipt printer not available: {e}")
+
+# Import สำหรับ thermal printing  
+try:
+    from thermal_printer import ThermalPrinter
+    THERMAL_AVAILABLE = True
+    print("✅ Thermal printer module loaded")
+except ImportError as e:
+    THERMAL_AVAILABLE = False
+    print(f"❌ Thermal printer not available: {e}")
 
 class SalesTab(Frame):
     def __init__(self, parent, product_tab=None, dashboard_tab=None, profit_tab=None):
@@ -141,16 +160,33 @@ class SalesTab(Frame):
         self.update_summary()
         
     def create_checkout_button(self):
-        """สร้างปุ่ม Checkout"""
+        """สร้างปุ่ม Checkout และปุ่มทดสอบ"""
         self.F4 = Frame(self.F2)
         self.F4.pack(pady=10, fill=X)
         
-        self.btn_checkout = ttk.Button(self.F4, text="CHECKOUT", 
+        # ปุ่ม Checkout หลัก
+        self.btn_checkout = ttk.Button(self.F4, text="💳 CHECKOUT", 
                                       command=self.open_checkout_window,
                                       style='Checkout.TButton')
         self.btn_checkout.pack(fill=X, ipady=10)
         
-        # สร้าง style สำหรับปุ่ม checkout
+        # ปุ่มทดสอบต่างๆ
+        test_frame = Frame(self.F4)
+        test_frame.pack(fill=X, pady=(10, 0))
+        
+        # ปุ่มทดสอบ PDF
+        if RECEIPT_AVAILABLE:
+            self.btn_test_pdf = ttk.Button(test_frame, text="📄 ทดสอบ PDF", 
+                                          command=self.test_pdf_receipt)
+            self.btn_test_pdf.pack(side=LEFT, padx=2, fill=X, expand=True)
+        
+        # ปุ่มทดสอบ Thermal
+        if THERMAL_AVAILABLE:
+            self.btn_test_thermal = ttk.Button(test_frame, text="🖨️ ทดสอบ Thermal", 
+                                              command=self.test_thermal_printer)
+            self.btn_test_thermal.pack(side=RIGHT, padx=2, fill=X, expand=True)
+        
+        # สร้าง styles
         style = ttk.Style()
         style.configure('Checkout.TButton', font=(None, 16, 'bold'))
         
@@ -403,17 +439,17 @@ class SalesTab(Frame):
                     quantity = item[3]
                     update_stock(barcode, quantity)
                 
-                # แสดงข้อความสำเร็จ
-                messagebox.showinfo("Success", f"บันทึกการขายเรียบร้อย\nTransaction ID: {transaction_id}\nเงินทอน: {change:,.2f} บาท")
+                # ปิดหน้าต่าง checkout ก่อน
+                checkout_window.destroy()
+                
+                # แสดงหน้าต่างตัวเลือกการพิมพ์
+                self.show_print_options(transaction_id, subtotal, vat, grand_total, received, change)
                 
                 # เคลียร์ตะกร้า
                 self.clear_cart()
                 
                 # รีเฟรชทุกแท็บ
                 self.refresh_all_tabs()
-                
-                # ปิดหน้าต่าง
-                checkout_window.destroy()
                 
             except Exception as e:
                 messagebox.showerror("Error", f"เกิดข้อผิดพลาด: {str(e)}")
@@ -433,6 +469,228 @@ class SalesTab(Frame):
         
         # เริ่มต้นการคำนวณเงินทอน
         update_change()
+
+    def show_print_options(self, transaction_id, subtotal, vat, grand_total, received_amount, change_amount):
+        """แสดงหน้าต่างตัวเลือกการพิมพ์"""
+        print_window = Toplevel(self)
+        print_window.title("ตัวเลือกการพิมพ์ใบเสร็จ")
+        print_window.geometry("500x400")
+        print_window.transient(self.master)
+        print_window.grab_set()
+        
+        # ตำแหน่งกลางหน้าจอ
+        print_window.update_idletasks()
+        x = (print_window.winfo_screenwidth() // 2) - (250)
+        y = (print_window.winfo_screenheight() // 2) - (200)
+        print_window.geometry(f"500x400+{x}+{y}")
+        
+        # หัวข้อ
+        Label(print_window, text="บันทึกการขายเรียบร้อยแล้ว! 🎉", 
+              font=('Arial', 16, 'bold'), fg='green').pack(pady=20)
+        
+        # ข้อมูลการขาย
+        info_frame = Frame(print_window, bg='#f0f0f0', relief=RIDGE, bd=2)
+        info_frame.pack(fill=X, padx=20, pady=10)
+        
+        Label(info_frame, text=f"เลขที่ใบเสร็จ: {transaction_id}", 
+              font=('Arial', 12, 'bold'), bg='#f0f0f0').pack(pady=5)
+        Label(info_frame, text=f"ยอดรวม: {grand_total:,.2f} บาท", 
+              font=('Arial', 11), bg='#f0f0f0').pack(pady=2)
+        Label(info_frame, text=f"เงินทอน: {change_amount:,.2f} บาท", 
+              font=('Arial', 11), bg='#f0f0f0').pack(pady=2)
+        
+        # ตัวเลือกการพิมพ์
+        Label(print_window, text="เลือกประเภทใบเสร็จ:", 
+              font=('Arial', 14, 'bold')).pack(pady=(20, 10))
+        
+        # ปุ่มต่างๆ
+        button_frame = Frame(print_window)
+        button_frame.pack(pady=20, fill=X, padx=20)
+        
+        # ข้อมูลสำหรับ callback
+        transaction_data = {
+            'transaction_id': transaction_id,
+            'subtotal': subtotal,
+            'vat': vat,
+            'grand_total': grand_total,
+            'received_amount': received_amount,
+            'change_amount': change_amount
+        }
+        
+        cart_items = list(self.cart.values())
+        
+        # ปุ่ม Export PDF
+        if RECEIPT_AVAILABLE:
+            pdf_btn = Button(button_frame, 
+                            text="📄 Export PDF\n(ใบเสร็จขนาด A4)",
+                            command=lambda: self.export_pdf_receipt(transaction_data, cart_items, print_window),
+                            bg='#4CAF50', fg='white', font=('Arial', 11, 'bold'),
+                            height=3, width=20)
+            pdf_btn.pack(side=LEFT, padx=10, pady=5, fill=X, expand=True)
+        else:
+            Label(button_frame, text="PDF ไม่พร้อมใช้\n(ติดตั้ง reportlab)", 
+                  fg='red', font=('Arial', 9)).pack(side=LEFT, padx=10)
+        
+        # ปุ่ม Thermal Print
+        if THERMAL_AVAILABLE:
+            thermal_btn = Button(button_frame,
+                               text="🖨️ Print Receipt\n(Thermal Printer 80mm)",
+                               command=lambda: self.print_thermal_receipt(transaction_data, cart_items, print_window),
+                               bg='#2196F3', fg='white', font=('Arial', 11, 'bold'),
+                               height=3, width=20)
+            thermal_btn.pack(side=RIGHT, padx=10, pady=5, fill=X, expand=True)
+        else:
+            Label(button_frame, text="Thermal Printer ไม่พร้อมใช้\n(ติดตั้ง pywin32)", 
+                  fg='red', font=('Arial', 9)).pack(side=RIGHT, padx=10)
+        
+        # ตัวเลือกเพิ่มเติม
+        options_frame = Frame(print_window)
+        options_frame.pack(pady=20, fill=X, padx=20)
+        
+        # ปุ่มพิมพ์ทั้งคู่
+        if RECEIPT_AVAILABLE and THERMAL_AVAILABLE:
+            both_btn = Button(options_frame,
+                             text="📄🖨️ Export PDF และ Print Receipt",
+                             command=lambda: self.export_and_print_both(transaction_data, cart_items, print_window),
+                             bg='#FF9800', fg='white', font=('Arial', 11, 'bold'),
+                             height=2)
+            both_btn.pack(fill=X, pady=5)
+        
+        # ปุ่มข้าม
+        skip_btn = Button(options_frame,
+                         text="ข้าม (ไม่พิมพ์ใบเสร็จ)",
+                         command=print_window.destroy,
+                         font=('Arial', 10),
+                         height=2)
+        skip_btn.pack(fill=X, pady=5)
+        
+        # ปุ่มทดสอบเครื่องพิมพ์
+        if THERMAL_AVAILABLE:
+            test_frame = Frame(print_window)
+            test_frame.pack(pady=10)
+            
+            test_btn = Button(test_frame,
+                             text="🔧 ทดสอบ Thermal Printer",
+                             command=self.test_thermal_printer,
+                             font=('Arial', 9))
+            test_btn.pack()
+
+    def export_pdf_receipt(self, transaction_data, cart_items, parent_window):
+        """Export ใบเสร็จเป็น PDF"""
+        try:
+            printer = ReceiptPrinter()
+            filename = printer.print_receipt_from_transaction(
+                transaction_id=transaction_data['transaction_id'],
+                subtotal=transaction_data['subtotal'],
+                vat=transaction_data['vat'],
+                grand_total=transaction_data['grand_total'],
+                received_amount=transaction_data['received_amount'],
+                change_amount=transaction_data['change_amount'],
+                cart_items=cart_items
+            )
+            
+            messagebox.showinfo("สำเร็จ", 
+                               f"Export PDF เรียบร้อย!\n"
+                               f"ไฟล์: {filename}\n"
+                               f"ไฟล์จะเปิดอัตโนมัติ")
+            parent_window.destroy()
+            
+        except Exception as e:
+            messagebox.showerror("ข้อผิดพลาด", 
+                               f"ไม่สามารถ Export PDF ได้:\n{str(e)}")
+
+    def print_thermal_receipt(self, transaction_data, cart_items, parent_window):
+        """พิมพ์ใบเสร็จด้วย Thermal Printer"""
+        try:
+            printer = ThermalPrinter()
+            
+            # เตรียมข้อมูลสำหรับ thermal printer
+            transaction_data['datetime'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            success = printer.print_receipt(transaction_data, cart_items)
+            
+            if success:
+                messagebox.showinfo("สำเร็จ", 
+                                   f"พิมพ์ใบเสร็จเรียบร้อย!\n"
+                                   f"เลขที่: {transaction_data['transaction_id']}")
+                parent_window.destroy()
+            
+        except Exception as e:
+            messagebox.showerror("ข้อผิดพลาด", 
+                               f"ไม่สามารถพิมพ์ได้:\n{str(e)}\n\n"
+                               f"กรุณาตรวจสอบ:\n"
+                               f"• เครื่องพิมพ์เชื่อมต่อแล้ว\n"
+                               f"• ติดตั้ง pywin32\n"
+                               f"• เปิดเครื่องพิมพ์")
+
+    def export_and_print_both(self, transaction_data, cart_items, parent_window):
+        """Export PDF และ Print Thermal พร้อมกัน"""
+        try:
+            # Export PDF ก่อน
+            pdf_printer = ReceiptPrinter()
+            pdf_filename = pdf_printer.print_receipt_from_transaction(
+                transaction_id=transaction_data['transaction_id'],
+                subtotal=transaction_data['subtotal'],
+                vat=transaction_data['vat'],
+                grand_total=transaction_data['grand_total'],
+                received_amount=transaction_data['received_amount'],
+                change_amount=transaction_data['change_amount'],
+                cart_items=cart_items
+            )
+            
+            # Print Thermal
+            thermal_printer = ThermalPrinter()
+            transaction_data['datetime'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            thermal_printer.print_receipt(transaction_data, cart_items)
+            
+            messagebox.showinfo("สำเร็จ", 
+                               f"Export PDF และพิมพ์ใบเสร็จเรียบร้อย!\n"
+                               f"PDF: {pdf_filename}\n"
+                               f"เลขที่: {transaction_data['transaction_id']}")
+            parent_window.destroy()
+            
+        except Exception as e:
+            messagebox.showerror("ข้อผิดพลาด", 
+                               f"เกิดข้อผิดพลาด:\n{str(e)}")
+
+    def test_thermal_printer(self):
+        """ทดสอบ Thermal Printer"""
+        try:
+            printer = ThermalPrinter()
+            success, message = printer.test_printer()
+            
+            if success:
+                messagebox.showinfo("ทดสอบสำเร็จ", f"✅ {message}")
+            else:
+                messagebox.showerror("ทดสอบล้มเหลว", f"❌ {message}")
+                
+        except Exception as e:
+            messagebox.showerror("ข้อผิดพลาด", f"ไม่สามารถทดสอบได้:\n{str(e)}")
+
+    def test_pdf_receipt(self):
+        """ทดสอบ PDF Receipt"""
+        if not self.cart:
+            messagebox.showwarning("Warning", "ไม่มีสินค้าในตะกร้า\nกรุณาเพิ่มสินค้าเพื่อทดสอบ")
+            return
+        
+        try:
+            subtotal, vat, grand_total = self.calculate_totals()
+            
+            printer = ReceiptPrinter()
+            filename = printer.print_receipt_from_transaction(
+                transaction_id="TEST_PDF",
+                subtotal=subtotal,
+                vat=vat,
+                grand_total=grand_total,
+                received_amount=grand_total + 100,
+                change_amount=100,
+                cart_items=list(self.cart.values())
+            )
+            
+            messagebox.showinfo("ทดสอบ PDF สำเร็จ", f"✅ สร้าง PDF ทดสอบเรียบร้อย!\nไฟล์: {filename}")
+            
+        except Exception as e:
+            messagebox.showerror("ทดสอบ PDF ล้มเหลว", f"❌ เกิดข้อผิดพลาด:\n{str(e)}")
         
     def clear_cart(self):
         """เคลียร์ตะกร้าสินค้า"""
