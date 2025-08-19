@@ -11,7 +11,12 @@ c.execute("""CREATE TABLE IF NOT EXISTS product (
             barcode TEXT,
             title TEXT,
             price REAL,
-            category TEXT )""")
+            cost REAL,
+            quantity INTEGER,
+            unit TEXT,
+            category TEXT,
+            reorder_point INTEGER,
+            supplier TEXT )""")
 
 # ตาราง sales (แทน transaction เพราะเป็น reserved keyword)
 c.execute("""CREATE TABLE IF NOT EXISTS sales (
@@ -26,12 +31,39 @@ c.execute("""CREATE TABLE IF NOT EXISTS sales (
             items TEXT )""")
 
 
-def insert_product(barcode,title,price,category):
+def insert_product(barcode, title, price, cost, quantity, unit, category, reorder_point, supplier):
     with conn:
-        command = 'INSERT INTO product VALUES (?,?,?,?,?)'
-        c.execute(command,(None,barcode,title,price,category))
+        command = 'INSERT INTO product VALUES (?,?,?,?,?,?,?,?,?,?)'
+        c.execute(command, (None, barcode, title, price, cost, quantity, unit, category, reorder_point, supplier))
         conn.commit()
         print('saved')
+
+def update_product(barcode, title, price, cost, quantity, unit, category, reorder_point, supplier):
+    """อัปเดตข้อมูลสินค้า"""
+    with conn:
+        command = 'UPDATE product SET title=?, price=?, cost=?, quantity=?, unit=?, category=?, reorder_point=?, supplier=? WHERE barcode=?'
+        c.execute(command, (title, price, cost, quantity, unit, category, reorder_point, supplier, barcode))
+        conn.commit()
+        print(f'Product {barcode} updated')
+
+def update_stock(barcode, quantity_sold):
+    """อัปเดตจำนวนสต็อกหลังขาย"""
+    with conn:
+        command = 'UPDATE product SET quantity = quantity - ? WHERE barcode = ? AND quantity >= ?'
+        c.execute(command, (quantity_sold, barcode, quantity_sold))
+        if c.rowcount == 0:
+            print(f'Warning: Insufficient stock for barcode {barcode}')
+        else:
+            conn.commit()
+            print(f'Stock updated for {barcode}: -{quantity_sold}')
+
+def get_product_by_barcode(barcode):
+    """ดึงข้อมูลสินค้าตาม barcode"""
+    with conn:
+        command = 'SELECT * FROM product WHERE barcode=?'
+        c.execute(command, (barcode,))
+        data = c.fetchone()
+        return data
 
 
 def view_product(allfield=True):
@@ -39,7 +71,7 @@ def view_product(allfield=True):
         if allfield:
             command = 'SELECT * FROM product'
         else:
-            command = 'SELECT barcode,title,price,category FROM product'
+            command = 'SELECT barcode,title,price,cost,quantity,unit,category,reorder_point FROM product'
         c.execute(command)
         data = c.fetchall()
         print(data)
@@ -55,9 +87,17 @@ def delete_product(barcode):
 
 def search_barcode(barcode):
     with conn:
-        command = 'SELECT barcode,title,price,category FROM product WHERE barcode=(?)'
+        command = 'SELECT barcode,title,price,cost,quantity,unit,category,reorder_point FROM product WHERE barcode=(?)'
         c.execute(command,([barcode]))
         data = list(c.fetchone())
+        return data
+
+def get_sales_by_date_range(start_date, end_date):
+    """ดึงข้อมูลการขายตามช่วงวันที่"""
+    with conn:
+        command = 'SELECT * FROM sales WHERE date(datetime) BETWEEN ? AND ? ORDER BY datetime DESC'
+        c.execute(command, (start_date, end_date))
+        data = c.fetchall()
         return data
 
 def insert_transaction(transaction_id, subtotal, vat, grand_total, received_amount, change_amount, items):

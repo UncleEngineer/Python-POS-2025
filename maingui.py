@@ -2,7 +2,18 @@ from tkinter import *
 from tkinter import ttk, messagebox
 import os
 from basicsql import *
-from elements import SalesTab, ProductTab
+
+# Import แต่ละแท็บ
+try:
+    from tab1 import SalesTab
+    from tab2 import ProductTab  
+    from tab3 import DashboardTab
+    from tab4 import ProfitTab
+except ImportError as e:
+    print(f"Error importing tabs: {e}")
+    print("กรุณาตรวจสอบว่าไฟล์ tab1.py, tab2.py, tab3.py, tab4.py อยู่ในโฟลเดอร์เดียวกัน")
+    print("และติดตั้ง tkcalendar: pip install tkcalendar")
+    exit(1)
 
 # PATH = os.getcwd()
 # print(PATH)
@@ -20,7 +31,7 @@ y = (hs/2)-(h/2)
 
 GUI.geometry(f'{w}x{h}+{x:.0f}+{y:.0f}')
 # GUI.geometry('700x600')
-GUI.title('โปรแกรมขายของร้านลุง')
+GUI.title('โปรแกรมขายของร้านลุง - Version 8')
 
 ##########MENU###########
 menubar = Menu(GUI)
@@ -33,7 +44,6 @@ filemenu.add_command(label='เปิดเมนูเพิ่มสินค�
 filemenu.add_command(label='ออกจากโปรแกรม',command=lambda: GUI.quit())
 
 #About Menu
-
 def AboutMenu(event=None):
     GUI2 = Toplevel()
     w = 500
@@ -47,13 +57,16 @@ def AboutMenu(event=None):
     
     GUI2.geometry(f'{w}x{h}+{x:.0f}+{y:.0f}')
     
-    uncle_icon = PhotoImage(file='uncle.png').subsample(2) # .subsample(2) resize down / 2
-    Label(GUI2,image=uncle_icon).pack()
+    try:
+        uncle_icon = PhotoImage(file='uncle.png').subsample(2) # .subsample(2) resize down / 2
+        Label(GUI2,image=uncle_icon).pack()
+    except:
+        pass  # ถ้าไม่มีไฟล์ไอคอนก็ข้าม
     
-    Label(GUI2,text='โปรแกรมนี้เป็นโปรแกรมสำหรับขายของ\nคุณสามารถใช้งานได้ฟรี ไม่มีค่าใช้จ่าย\nTel: 0812345678').pack()
+    Label(GUI2,text='โปรแกรมขายของร้านลุง - Version 8\n\nฟีเจอร์ใหม่:\n• แท็บ Profit Analysis\n• Reorder Point System\n• Supplier Management\n• Smart Alerts\n\nTel: 0812345678',
+          font=(None, 11)).pack(pady=20)
     
     GUI2.mainloop()
-
 
 aboutmenu = Menu(menubar,tearoff=0)
 menubar.add_cascade(label='About',menu=aboutmenu)
@@ -68,18 +81,46 @@ Tab.pack(fill=BOTH,expand=1)
 # สร้าง Frame สำหรับแต่ละแท็บ
 T1 = Frame(Tab)
 T2 = Frame(Tab)
+T3 = Frame(Tab)
+T4 = Frame(Tab)
 
-# โหลดไอคอนแท็บ
-tab_icon1 = PhotoImage(file='tab1.png')
-tab_icon2 = PhotoImage(file='tab2.png')
-
-# เพิ่มแท็บ
-Tab.add(T1,text='เมนูขาย',image=tab_icon1,compound='left')
-Tab.add(T2,text='เพิ่มสินค้า',image=tab_icon2,compound='left')
+# โหลดไอคอนแท็บ (มี error handling)
+try:
+    tab_icon1 = PhotoImage(file='tab1.png')
+    tab_icon2 = PhotoImage(file='tab2.png')
+    tab_icon3 = PhotoImage(file='tab3.png')
+    # tab_icon4 = PhotoImage(file='tab4.png')  # สร้างไอคอนนี้ถ้าต้องการ
+    
+    # เพิ่มแท็บพร้อมไอคอน
+    Tab.add(T1,text='เมนูขาย',image=tab_icon1,compound='left')
+    Tab.add(T2,text='เพิ่มสินค้า',image=tab_icon2,compound='left')
+    Tab.add(T3,text='Dashboard',image=tab_icon3,compound='left')
+    Tab.add(T4,text='Profit')
+    
+except:
+    # ถ้าไม่มีไอคอน ใช้แค่ข้อความ
+    Tab.add(T1,text='เมนูขาย')
+    Tab.add(T2,text='เพิ่มสินค้า')
+    Tab.add(T3,text='Dashboard')
+    Tab.add(T4,text='Profit')
+    print("หมายเหตุ: ไม่พบไฟล์ไอคอน กำลังรันโดยไม่มีไอคอน")
 
 # สร้าง instance ของแต่ละแท็บ
-sales_tab = SalesTab(T1)
-
-product_tab = ProductTab(T2, sales_tab)  # ส่ง sales_tab เพื่อให้อัปเดตปุ่มได้
+try:
+    sales_tab = SalesTab(T1)
+    product_tab = ProductTab(T2)
+    dashboard_tab = DashboardTab(T3)
+    profit_tab = ProfitTab(T4)
+    
+    # ตั้งค่า reference ระหว่างแท็บ (เรียกหลังสร้างทุกแท็บแล้ว)
+    sales_tab.set_references(product_tab=product_tab, dashboard_tab=dashboard_tab, profit_tab=profit_tab)
+    product_tab.set_references(sales_tab=sales_tab, dashboard_tab=dashboard_tab, profit_tab=profit_tab)
+    
+    print("โปรแกรม POS ร้านลุง Version 8 เริ่มทำงานเรียบร้อย!")
+    print("ฟีเจอร์ใหม่: Profit Analysis, Reorder Point, Supplier Management")
+    
+except Exception as e:
+    messagebox.showerror("Error", f"เกิดข้อผิดพลาดในการเริ่มโปรแกรม:\n{str(e)}\n\nกรุณาตรวจสอบ:\n1. ไฟล์ tab1.py-tab4.py\n2. ไฟล์ basicsql.py\n3. ติดตั้ง tkcalendar")
+    GUI.quit()
 
 GUI.mainloop()
